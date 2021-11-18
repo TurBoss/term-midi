@@ -127,7 +127,7 @@ int main()
         printf("%s\n", info->name);
         printf("%d\n", info->input);
     }
-    int device_num = 2; // TODO get user input for the midi device to use
+    int device_num = 0; // TODO get user input for the midi device to use
     // open midi output on first available device
     if(Pm_OpenOutput(&pm.stream, device_num, NULL, 128, portmidi_timeproc, NULL, 1) != 0)
     {
@@ -189,8 +189,23 @@ int main()
             }
             // convert input to note number and play note
             note_num = get_note(input); // on note down
-            if(note_num != -1 && !note_pressed)
+            if(note_num == -1)
+                continue;
+            if(!note_pressed)
             {
+                note_on(note_num);
+                add_note(note_num);
+                note_pressed = 1;
+                note_time = portmidi_timestamp_now();
+                mvprintw(0, 0, "note down");
+            }
+            else if(note_num != note_queue[num_notes-1].number) // note played while last input was a note, check if it is a new note
+            {
+                note_queue[num_notes-1].duration = portmidi_timestamp_now() - note_time; // add the note since we now know the end duration
+                note_off(note_queue[num_notes-1].number);
+                note_pressed = 0;
+                mvprintw(0, 0, "note up  %d", note_queue[num_notes-1].duration);
+
                 note_on(note_num);
                 add_note(note_num);
                 note_pressed = 1;
