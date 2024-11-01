@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "acurses.h"
+#include "agon/vdp_vdu.h"
 
 #define SOKOL_IMPL
 #include "sokol_time.h"
@@ -109,13 +110,16 @@ uint8_t cur_step;
 int main() {
 	stm_setup();
 	uart1_init();
-
+	// vdp_keyboard_cotrol(5, 100, 1);
 	// init ncurses screen
 	initscr();
+
 	noecho();
 	curs_set(0);
+
+
 	keypad(stdscr, TRUE);
-	//nodelay(stdscr, TRUE); // turns getch into a non-blocking function
+	nodelay(stdscr, TRUE); // turns getch into a non-blocking function
 	timeout(20); // getch returns -1 if no data within 10ms
 
 	keyboard_offset = (LINES / 2) - 12; // put keyboard roughly in middle of terminal
@@ -136,8 +140,8 @@ int main() {
 			refresh();
 		}
 		// get user input
-		input = getch();
-		mvprintw(1, 0, "%d", input);
+		input = wgetch(0);
+		// mvprintw(1, 0, "%d", input);
 		if (input != -1) // if user input received
 				{
 			// exit keyboard mode
