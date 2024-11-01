@@ -1,47 +1,46 @@
-;   TurBoss 2024
+; TurBoss 2024
 ;   Agon Light UART 1 helper
 
+	assume  adl=1
 
-assume  adl=1
+	section .text
 
-section .text
+	public		_UART1_INIT
+	public		_UART1_SEND
+	public		_UART1_READ
 
-public		_UART1_INIT
-public		_UART1_SEND
-public		_UART1_READ
-
-; UART1
-PORTC_DRVAL_DEF       EQU    0ffh			;The default value for Port C data register (set for Mode 2).
-PORTC_DDRVAL_DEF      EQU    0ffh			;The default value for Port C data direction register (set for Mode 2).
-PORTC_ALT0VAL_DEF     EQU    0ffh			;The default value for Port C alternate register-0 (clear interrupts).
-PORTC_ALT1VAL_DEF     EQU    000h			;The default value for Port C alternate register-1 (set for Mode 2).
-PORTC_ALT2VAL_DEF     EQU    000h			;The default value for Port C alternate register-2 (set for Mode 2).
+	; UART1
+	PORTC_DRVAL_DEF       EQU    0ffh			;The default value for Port C data register (set for Mode 2).
+	PORTC_DDRVAL_DEF      EQU    0ffh			;The default value for Port C data direction register (set for Mode 2).
+	PORTC_ALT0VAL_DEF     EQU    0ffh			;The default value for Port C alternate register-0 (clear interrupts).
+	PORTC_ALT1VAL_DEF     EQU    000h			;The default value for Port C alternate register-1 (set for Mode 2).
+	PORTC_ALT2VAL_DEF     EQU    000h			;The default value for Port C alternate register-2 (set for Mode 2).
 
 
-PC_DR		EQU	09Eh
-PC_DDR		EQU	09Fh
-PC_ALT1		EQU	0A0h
-PC_ALT2		EQU	0A1h
+	PC_DR		EQU	09Eh
+	PC_DDR		EQU	09Fh
+	PC_ALT1		EQU	0A0h
+	PC_ALT2		EQU	0A1h
 
-;* UART1 Registers
+	;* UART1 Registers
 
-UART1_RBR	EQU 0D0h
-UART1_THR	EQU 0D0h
-UART1_BRG_L	EQU 0D0h
-UART1_IER	EQU 0D1h
-UART1_BRG_H	EQU 0D1h
-UART1_IIR	EQU 0D2h
-UART1_FCTL	EQU 0D2h
-UART1_LCTL	EQU 0D3h
-UART1_MCTL	EQU 0D4h
-UART1_LSR	EQU 0D5h
-UART1_MSR	EQU 0D6h
-UART1_SPR	EQU 0D7h
+	UART1_RBR	EQU 0D0h
+	UART1_THR	EQU 0D0h
+	UART1_BRG_L	EQU 0D0h
+	UART1_IER	EQU 0D1h
+	UART1_BRG_H	EQU 0D1h
+	UART1_IIR	EQU 0D2h
+	UART1_FCTL	EQU 0D2h
+	UART1_LCTL	EQU 0D3h
+	UART1_MCTL	EQU 0D4h
+	UART1_LSR	EQU 0D5h
+	UART1_MSR	EQU 0D6h
+	UART1_SPR	EQU 0D7h
 
-; baudrate divisors 31250 UART 1 MIDI
-; 18432000 / (16*31250) = 36,864
-BRD_LOW_1					EQU		40h
-BRD_HIGH_1					EQU		42h
+	; baudrate divisors 31250 UART 1 MIDI
+	; 18432000 / (16*31250) = 36,864
+	BRD_LOW_1	EQU	24h
+	BRD_HIGH_1	EQU	16h
 
 _UART1_INIT:
 	; all pins to GPIO mode 2, high impedance input
@@ -89,17 +88,12 @@ _UART1_INIT:
 	RET
 
 _UART1_SEND:
-    POP		HL
-    POP		DE
-    PUSH	DE		; de = arg
-    PUSH	HL
-
-    PUSH	de		; AF
+    PUSH	AF
 uart1_available:
 	IN0		A,				(UART1_LSR)
 	AND		01000000b 					; 040h = Transmit holding register/FIFO and transmit shift register are empty
 	JR		Z,				uart1_available
-	POP		DE							; AF
+	POP		AF
 	OUT0	(UART1_THR),	A
 	; RST.LIL 10h
 	RET
