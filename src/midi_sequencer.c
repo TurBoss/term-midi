@@ -95,7 +95,7 @@ enum notes {
 #define CHANNEL         0 // midi channel to use TODO: make this user selectable
 #define NOTE_DURATION 100 // standard minimum note duration TODO: dont use this
 #define COL_OFFSET     10 // offset to start notes on (width of keyboard)
-#define STEP_LENGTH    30 // duration of one step in ms (optimzing for appearance and effeciency of step checks)
+#define STEP_LENGTH    10 // duration of one step in ms (optimzing for appearance and effeciency of step checks)
 #define NUM_STEPS      68 // number of steps in a loop TODO: make this user selectable
 #define MAX_NOTES     256 // maximum number of notes allowed TODO: add command line option to change this from default
 
@@ -120,7 +120,7 @@ int main() {
 
 	keypad(stdscr, TRUE);
 	nodelay(stdscr, TRUE); // turns getch into a non-blocking function
-	timeout(20); // getch returns -1 if no data within 10ms
+	timeout(5); // getch returns -1 if no data within 10ms
 
 	keyboard_offset = (LINES / 2) - 12; // put keyboard roughly in middle of terminal
 	draw(keyboard_offset);
@@ -131,13 +131,16 @@ int main() {
 	uint8_t note_pressed = 0;
 	int input;
 	int note_num;
+	bool playing = false;
 
 	while (1) {
-		// if enough time has passed, increment step
-		if ((stm_now() - cur_step_time) > STEP_LENGTH) {
-			cur_step_time = stm_now();
-			step();
-			refresh();
+		if (playing) {
+			// if enough time has passed, increment step
+			if ((stm_now() - cur_step_time) > STEP_LENGTH) {
+				cur_step_time = stm_now();
+				step();
+				refresh();
+			}
 		}
 		// get user input
 		input = wgetch(0);
@@ -156,6 +159,10 @@ int main() {
 			if (input == 'l') {
 				while (num_notes)
 					remove_note(0);
+			}
+			// clear notes
+			if (input == ' ') {
+				playing = !playing;
 			}
 			// convert input to note number and play note
 			note_num = get_note(input); // on note down
