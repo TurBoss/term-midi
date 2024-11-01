@@ -14,7 +14,7 @@
 
 
 void UART1_INIT(void);
-void UART1_SEND(uint8_t data);
+void UART1_SEND(int data);
 uint8_t UART1_READ(void);
 
 /*

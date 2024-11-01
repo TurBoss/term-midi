@@ -1,6 +1,6 @@
-/* TurBoss 2024
-   Agon Light UART 1 helper
-*/
+;   TurBoss 2024
+;   Agon Light UART 1 helper
+
 
 assume  adl=1
 
@@ -89,12 +89,17 @@ _UART1_INIT:
 	RET
 
 _UART1_SEND:
-	PUSH	AF
+    POP		HL
+    POP		DE
+    PUSH	DE		; de = arg
+    PUSH	HL
+
+    PUSH	de		; AF
 uart1_available:
 	IN0		A,				(UART1_LSR)
 	AND		01000000b 					; 040h = Transmit holding register/FIFO and transmit shift register are empty
 	JR		Z,				uart1_available
-	POP		AF
+	POP		DE							; AF
 	OUT0	(UART1_THR),	A
 	; RST.LIL 10h
 	RET
