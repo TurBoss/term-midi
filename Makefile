@@ -1,6 +1,13 @@
-CC = gcc
-CLAGS = -Wall -Wextra
-LIBS = -lncurses -lcsound64 -lportmidi
+# Makefile Options
+# ----------------------------
 
-sequencer: midi_sequencer.c
-	$(CC) $(CFLAGS) -o midi_sequencer midi_sequencer.c $(LIBS)
+NAME = midiseq
+DESCRIPTION = "Ag C Agon Midi Sequencer"
+COMPRESSED = NO
+
+CFLAGS = -Wall -Wextra -Oz -Wint-conversion
+CXXFLAGS = -Wall -Wextra -Oz -Wint-conversion
+
+# ----------------------------
+
+include $(shell cedev-config --makefile)

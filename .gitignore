@@ -1,2 +1,6 @@
 midi_sequencer
 .vscode/settings.json
+.project
+bin/midiseq.bin
+bin/midiseq.map
+obj/

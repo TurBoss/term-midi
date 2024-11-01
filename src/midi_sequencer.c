@@ -5,10 +5,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <ncurses.h>
-#include <portmidi.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include "acurses.h"
+
 #define SOKOL_IMPL
 #include "sokol_time.h"
+
+
+void UART1_INIT(void);
+void UART1_SEND(uint8_t data);
+uint8_t UART1_READ(void);
 
 /*
 TODO:
@@ -30,13 +37,8 @@ TODO:
     consider adding colours?
     fix variable types
 */
-/* TYPES */
-typedef struct
-{
-  PmDeviceID device_id;
-  PortMidiStream *stream;
-} portmidi;
 
+/* TYPES */
 typedef struct
 {
     uint16_t step;
@@ -55,8 +57,8 @@ void step       (void);
 void remove_note(int index);
 void add_note   (int row);
 int  get_note   (int in);
-static PmTimestamp portmidi_timestamp_now   (void);
-static PmTimestamp portmidi_timeproc        (void *time_info);
+void uart1_init (void);
+void uart1_send (uint8_t data);
 
 /* ENUMS */
 enum notes{
@@ -95,49 +97,21 @@ enum notes{
 #define NOTE_DURATION 100 // standard minimum note duration TODO: dont use this
 #define COL_OFFSET     10 // offset to start notes on (width of keyboard)
 #define STEP_LENGTH    50 // duration of one step in ms (optimzing for appearance and effeciency of step checks)
-#define NUM_STEPS     110 // number of steps in a loop TODO: make this user selectable
+#define NUM_STEPS      68 // number of steps in a loop TODO: make this user selectable
 #define MAX_NOTES     256 // maximum number of notes allowed TODO: add command line option to change this from default
 
-
 /* GLOBALS */
-struct{
-  uint64_t clock_base;
-  bool did_init;
-} portmidi_global_data;
-portmidi pm = {};
 note_t note_queue[MAX_NOTES] = {};
 int num_notes = 0;   // keep track of number of notes in the loop
 int keyboard_offset; // vertical/row offset to draw the keyboard and corresponding notes,
 int32_t cur_step_time;
 uint8_t cur_step;
+
 /* FUNCTIONS */
 int main()
 {
-    // init MIDI
-    if(Pm_Initialize() != 0)
-        return 0;
     stm_setup();
-
-    // get info on available midi devices
-    int num = Pm_CountDevices();
-    for (int i = 0; i < num; ++i) {
-        PmDeviceInfo const *info = Pm_GetDeviceInfo(i);
-        if (!info || !info->output)
-            continue;
-        printf("%s\n", info->name);
-        printf("%d\n", info->input);
-    }
-    int device_num = 0; // TODO get user input for the midi device to use
-    // open midi output on first available device
-    if(Pm_OpenOutput(&pm.stream, device_num, NULL, 128, portmidi_timeproc, NULL, 1) != 0)
-    {
-        printf("%d", Pm_OpenOutput(&pm.stream, device_num, NULL, 128, portmidi_timeproc, NULL, 1));
-        return 0;
-    }
-
-
-    // decrease the keyboard delay and increase the character speed so that we can accurately measure note duration
-    system("xset r rate 5 100");
+    uart1_init();
 
     // init ncurses screen
     initscr();
@@ -150,7 +124,7 @@ int main()
     keyboard_offset = (LINES/2)-12; // put keyboard roughly in middle of terminal
     draw(keyboard_offset);
 
-    cur_step_time = portmidi_timestamp_now();
+    cur_step_time = stm_now();
     cur_step = 0;
     int32_t note_time;
     uint8_t note_pressed = 0;
@@ -160,9 +134,9 @@ int main()
     while(1)
     {
         // if enough time has passed, increment step
-        if((portmidi_timestamp_now() - cur_step_time) > STEP_LENGTH)
+        if((stm_now() - cur_step_time) > STEP_LENGTH)
         {
-            cur_step_time = portmidi_timestamp_now();
+            cur_step_time = stm_now();
             step();
             refresh();
         }
@@ -176,7 +150,6 @@ int main()
             {
                 while(num_notes)
                     remove_note(0);
-                system("xset r rate 250 50"); // reset keyboard delay back to what it was TODO: get values for this at startup to return it to exactly as before
                 endwin();
                 // TODO: stop all notes
                 return 0;
@@ -196,12 +169,12 @@ int main()
                 note_on(note_num);
                 add_note(note_num);
                 note_pressed = 1;
-                note_time = portmidi_timestamp_now();
+                note_time = stm_now();
                 mvprintw(0, 0, "note down");
             }
             else if(note_num != note_queue[num_notes-1].number) // note played while last input was a note, check if it is a new note
             {
-                note_queue[num_notes-1].duration = portmidi_timestamp_now() - note_time; // add the note since we now know the end duration
+                note_queue[num_notes-1].duration = stm_now() - note_time; // add the note since we now know the end duration
                 note_off(note_queue[num_notes-1].number);
                 note_pressed = 0;
                 mvprintw(0, 0, "note up  %d", note_queue[num_notes-1].duration);
@@ -209,13 +182,13 @@ int main()
                 note_on(note_num);
                 add_note(note_num);
                 note_pressed = 1;
-                note_time = portmidi_timestamp_now();
+                note_time = stm_now();
                 mvprintw(0, 0, "note down");
             }
         }
         else if(note_pressed) // if there are any notes pressed, this is on note up
         {
-            note_queue[num_notes-1].duration = portmidi_timestamp_now() - note_time; // add the note since we now know the end duration
+            note_queue[num_notes-1].duration = stm_now() - note_time; // add the note since we now know the end duration
             note_off(note_queue[num_notes-1].number);
             note_pressed = 0;
             mvprintw(0, 0, "note up  %d", note_queue[num_notes-1].duration);
@@ -227,28 +200,33 @@ int main()
 
 void play(note_t note)
 {
-    PmTimestamp pm_timestamp = portmidi_timestamp_now();
     // note on channel 1, note number, velocity = 0xFF
-    Pm_WriteShort(pm.stream, (pm_timestamp + note.offset), Pm_Message((NOTE_ON + CHANNEL), note.number + MIDI_OFFSET, 80));
+    uart1_send(NOTE_ON + CHANNEL);
+    uart1_send(note.number + MIDI_OFFSET);
+    uart1_send(80);
+
     // note off channel 1, note number, velocity = 0xFF
-    mvprintw(2, 0, "play note duration: %d", note.duration);
-    Pm_WriteShort(pm.stream, (pm_timestamp + note.offset + note.duration), Pm_Message((NOTE_OFF + CHANNEL), note.number + MIDI_OFFSET, 80));
+    uart1_send(NOTE_OFF + CHANNEL);
+    uart1_send(note.number + MIDI_OFFSET);
+    uart1_send(80);
 }
 
 // turn note on given note number
 void note_on(int note)
 {
-    PmTimestamp pm_timestamp = portmidi_timestamp_now();
-     // note off channel 1, note number, velocity = 0xFF
-    Pm_WriteShort(pm.stream, pm_timestamp, Pm_Message((NOTE_ON + CHANNEL), note + MIDI_OFFSET, 80));
+    // note on channel 1, note number, velocity = 0xFF
+    uart1_send(NOTE_ON + CHANNEL);
+    uart1_send(note + MIDI_OFFSET);
+    uart1_send(80);
 }
 
 // turn note off given note number
 void note_off(int note)
 {
-    PmTimestamp pm_timestamp = portmidi_timestamp_now();
-     // note off channel 1, note number, velocity = 0xFF
-    Pm_WriteShort(pm.stream, pm_timestamp, Pm_Message((NOTE_OFF + CHANNEL), note + MIDI_OFFSET, 80));
+    // note off channel 1, note number, velocity = 0xFF
+    uart1_send(NOTE_OFF + CHANNEL);
+    uart1_send(note + MIDI_OFFSET);
+    uart1_send(80);
 }
 
 // increment global step
@@ -257,7 +235,6 @@ void step(void)
     // erase scroll bar
     for(int j = 0; j<27; j++) // 27 is test value for the total bar height, maybe change
         mvaddch(keyboard_offset + j, cur_step + COL_OFFSET, ' ');
-
 
     for(int i = 0; i<num_notes; i++)
     {
@@ -283,7 +260,7 @@ void add_note(int note_num)
 {
     note_t n = {};
     n.step = cur_step;
-    n.offset = portmidi_timestamp_now() - cur_step_time;
+    n.offset = stm_now() - cur_step_time;
     n.duration = NOTE_DURATION; // default duration, this gets changed if we read that the note is longer
     n.number = note_num;
     mvaddch(n.number + keyboard_offset + 1, n.step + COL_OFFSET, '#'); // add to screen
@@ -354,7 +331,7 @@ void draw(int offset)
 // get corresponding note number for keyboard input
 int get_note(int in)
 {
-        switch(in)
+    switch(in)
     {
         case 'z': return(C);
         case 'x': return(D);
@@ -385,16 +362,14 @@ int get_note(int in)
     }
 }
 
-// get current timestamp in portmidi format
-static PmTimestamp portmidi_timestamp_now(void) {
-  if (!portmidi_global_data.did_init) {
-    portmidi_global_data.did_init = 1;
-    portmidi_global_data.clock_base = stm_now();
-  }
-  return (PmTimestamp)(stm_ms(stm_since(portmidi_global_data.clock_base)));
+// UART1 initialization and configuration
+void uart1_init(void)
+{
+	UART1_INIT();
 }
 
-static PmTimestamp portmidi_timeproc(void *time_info) {
-  (void)time_info;
-  return portmidi_timestamp_now();
+// Send a byte via UART1
+void uart1_send(uint8_t data)
+{
+	UART1_SEND(data);
 }

@@ -49,13 +49,6 @@
         or nanoseconds. Note that not all platforms will have nanosecond
         or even microsecond precision.
 
-    Uses the following time measurement functions under the hood:
-
-    Windows:        QueryPerformanceFrequency() / QueryPerformanceCounter()
-    MacOS/iOS:      mach_absolute_time()
-    emscripten:     clock_gettime(CLOCK_MONOTONIC)
-    Linux+others:   clock_gettime(CLOCK_MONITONIC)
-
     zlib/libpng license
 
     Copyright (c) 2018 Andre Weissflog
@@ -80,6 +73,7 @@
         distribution.
 */
 #include <stdint.h>
+#include <time.h>  // Include time.h for clock() function
 
 #ifndef SOKOL_API_DECL
     #define SOKOL_API_DECL extern
@@ -122,66 +116,17 @@ SOKOL_API_DECL double stm_ns(uint64_t ticks);
 #endif
 
 static int _stm_initialized;
-#if defined(_WIN32)
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-static LARGE_INTEGER _stm_win_freq;
-static LARGE_INTEGER _stm_win_start;
-#elif defined(__APPLE__) && defined(__MACH__)
-#include <mach/mach_time.h>
-static mach_timebase_info_data_t _stm_osx_timebase;
-static uint64_t _stm_osx_start;
-#else /* anything else, this will need more care for non-Linux platforms */
-#include <time.h>
-static uint64_t _stm_posix_start;
-#endif
-
-/* prevent 64-bit overflow when computing relative timestamp
-    see https://gist.github.com/jspohr/3dc4f00033d79ec5bdaf67bc46c813e3
-*/
-#if defined(_WIN32) || (defined(__APPLE__) && defined(__MACH__))
-_SOKOL_PRIVATE int64_t int64_muldiv(int64_t value, int64_t numer, int64_t denom) {
-    int64_t q = value / denom;
-    int64_t r = value % denom;
-    return q * numer + r * numer / denom;
-}
-#endif
-
+static clock_t _stm_start;
 
 SOKOL_API_IMPL void stm_setup(void) {
     SOKOL_ASSERT(0 == _stm_initialized);
     _stm_initialized = 1;
-    #if defined(_WIN32)
-        QueryPerformanceFrequency(&_stm_win_freq);
-        QueryPerformanceCounter(&_stm_win_start);
-    #elif defined(__APPLE__) && defined(__MACH__)
-        mach_timebase_info(&_stm_osx_timebase);
-        _stm_osx_start = mach_absolute_time();
-    #else
-        struct timespec ts;
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-        _stm_posix_start = (uint64_t)ts.tv_sec*1000000000 + (uint64_t)ts.tv_nsec;
-    #endif
+    _stm_start = clock();
 }
 
 SOKOL_API_IMPL uint64_t stm_now(void) {
     SOKOL_ASSERT(_stm_initialized);
-    uint64_t now;
-    #if defined(_WIN32)
-        LARGE_INTEGER qpc_t;
-        QueryPerformanceCounter(&qpc_t);
-        now = int64_muldiv(qpc_t.QuadPart - _stm_win_start.QuadPart, 1000000000, _stm_win_freq.QuadPart);
-    #elif defined(__APPLE__) && defined(__MACH__)
-        const uint64_t mach_now = mach_absolute_time() - _stm_osx_start;
-        now = int64_muldiv(mach_now, _stm_osx_timebase.numer, _stm_osx_timebase.denom);
-    #else
-        struct timespec ts;
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-        now = ((uint64_t)ts.tv_sec*1000000000 + (uint64_t)ts.tv_nsec) - _stm_posix_start;
-    #endif
-    return now;
+    return (uint64_t)(clock() - _stm_start);
 }
 
 SOKOL_API_IMPL uint64_t stm_diff(uint64_t new_ticks, uint64_t old_ticks) {
@@ -210,19 +155,18 @@ SOKOL_API_IMPL uint64_t stm_laptime(uint64_t* last_time) {
 }
 
 SOKOL_API_IMPL double stm_sec(uint64_t ticks) {
-    return (double)ticks / 1000000000.0;
+    return (double)ticks / CLOCKS_PER_SEC;
 }
 
 SOKOL_API_IMPL double stm_ms(uint64_t ticks) {
-    return (double)ticks / 1000000.0;
+    return (double)ticks / (CLOCKS_PER_SEC / 1000.0);
 }
 
 SOKOL_API_IMPL double stm_us(uint64_t ticks) {
-    return (double)ticks / 1000.0;
+    return (double)ticks / (CLOCKS_PER_SEC / 1000000.0);
 }
 
 SOKOL_API_IMPL double stm_ns(uint64_t ticks) {
-    return (double)ticks;
+    return (double)ticks / (CLOCKS_PER_SEC / 1000000000.0);
 }
 #endif /* SOKOL_IMPL */
-
