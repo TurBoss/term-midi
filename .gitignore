@@ -6,3 +6,4 @@ bin/midiseq.map
 obj/
 .pydevproject
 send.py
+env.sh

@@ -17,7 +17,7 @@
 
 void UART1_INIT(void);
 void UART1_SEND(uint8_t data);
-uint8_t UART1_READ(void);
+int UART1_READ(void);
 
 /*
  TODO:
@@ -50,44 +50,47 @@ typedef struct {
 
 /* FUNCTION PROTOTYPES */
 void play(note_t note);
+
 void note_on(int note);
 void note_off(int note);
 void set(int y, int x, char c, int status);
 void draw(int offset);
+void draw_grid(int offset);
 void step(void);
 void remove_note(int index);
 void add_note(int row);
 int get_note(int in);
-void uart1_init(void);
-void uart1_send(uint8_t data);
+void port_init(void);
+void midi_send(uint8_t *data);
+int midi_recv();
 
 /* ENUMS */
 enum notes {
 	C = 0x00,
-	C_,
-	D,
-	D_,
-	E,
-	F,
-	F_,
-	G,
-	G_,
-	A,
-	A_,
-	B,
-	C1,
-	C_1,
-	D1,
-	D_1,
-	E1,
-	F1,
-	F_1,
-	G1,
-	G_1,
-	A1,
-	A_1,
-	B1,
-	C2,
+	C_ = 0x01,
+	D = 0x02,
+	D_ = 0x03,
+	E = 0x04,
+	F = 0x05,
+	F_ = 0x06,
+	G = 0x07,
+	G_ = 0x08,
+	A = 0x09,
+	A_ = 0x0A,
+	B = 0x0B,
+	C1 = 0x0C,
+	C_1 = 0x0D,
+	D1 = 0x0E,
+	D_1 = 0x0F,
+	E1 = 0x10,
+	F1 = 0x11,
+	F_1 = 0x12,
+	G1 = 0x13,
+	G_1 = 0x14,
+	A1 = 0x15,
+	A_1 = 0x16,
+	B1 = 0x17,
+	C2 = 0x18,
 };
 
 /* MACROS */
@@ -96,9 +99,9 @@ enum notes {
 #define NOTE_ON      0x90 // midi status code for note on
 #define CHANNEL      0x00 // midi channel to use TODO: make this user selectable
 #define NOTE_DURATION 100 // standard minimum note duration TODO: dont use this
-#define COL_OFFSET     10 // offset to start notes on (width of keyboard)
+#define COL_OFFSET     13 // offset to start notes on (width of keyboard)
 #define STEP_LENGTH    10 // duration of one step in ms (optimzing for appearance and effeciency of step checks)
-#define NUM_STEPS      68 // number of steps in a loop TODO: make this user selectable
+#define NUM_STEPS      64 // number of steps in a loop TODO: make this user selectable
 #define MAX_NOTES     256 // maximum number of notes allowed TODO: add command line option to change this from default
 
 #define STEPS_PER_BEAT  16 // number of steps per beat (for 4/4 time signature)
@@ -115,7 +118,7 @@ int bpm = 120; // Default BPM value
 /* FUNCTIONS */
 int main() {
 	stm_setup();
-	uart1_init();
+	port_init();
 
 	// vdp_keyboard_cotrol(5, 100, 1);
 
@@ -132,6 +135,7 @@ int main() {
 
 	keyboard_offset = (LINES / 2) - 12; // put keyboard roughly in middle of terminal
 	draw(keyboard_offset);
+	draw_grid(keyboard_offset);
 
 	unsigned long long step_length;
 	cur_step_time = stm_now();
@@ -145,7 +149,7 @@ int main() {
 	mvprintw(0, 30, "BPM: %03d", bpm);
 
 	while (1) {
-		step_length = (6000 / (bpm * STEPS_PER_BEAT));
+		step_length = (600 / (bpm * STEPS_PER_BEAT));
 		if (playing) {
 			// if enough time has passed, increment step
 			if ((stm_now() - cur_step_time) > step_length) {
@@ -156,7 +160,7 @@ int main() {
 		}
 		// get user input
 		input = wgetch(0);
-		// mvprintw(1, 0, "%d", input);
+
 		if (input != -1) { // if user input received
 
 			// exit keyboard mode
@@ -199,11 +203,13 @@ int main() {
 				continue;
 
 			if (!note_pressed) {
+
 				note_on(note_num);
 				add_note(note_num);
 				note_pressed = 1;
 				note_time = stm_now();
-				mvprintw(0, 0, "note down           ");
+
+				mvprintw(0, 0, "note down           %02x", note_num);
 			}
 			else if (note_num != note_queue[num_notes - 1].number) { // note played while last input was a note, check if it is a new note
 				note_queue[num_notes - 1].duration = stm_now() - note_time; // add the note since we now know the end duration
@@ -215,7 +221,8 @@ int main() {
 				add_note(note_num);
 				note_pressed = 1;
 				note_time = stm_now();
-				mvprintw(0, 0, "note down           ");
+
+				mvprintw(0, 0, "note down           %02x", note_num);
 			}
 		}
 		else if (note_pressed) { // if there are any notes pressed, this is on note up
@@ -226,28 +233,30 @@ int main() {
 			mvprintw(0, 0, "note up       %03d", note_queue[num_notes - 1].duration);
 		}
 	}
-	endwin();
 	clear();
-
+	endwin();
 	return 0;
 }
 
-uint8_t note_on_send = 0x00;
-uint8_t note_off_send = 0x00;
+uint8_t note_cmd[3];
+uint8_t note_on_send;
+uint8_t note_off_send;
 
-uint8_t note_to_send = 0x00;
-uint8_t note_vel_send = 0;
+uint8_t note_to_send;
+uint8_t note_vel_send;
 
 void play(note_t note) {
 	// note on channel 1, note number, velocity = 0xFF
 
-	note_on_send = NOTE_ON + CHANNEL;
+	note_on_send = NOTE_ON | CHANNEL;
 	note_to_send = note.number + MIDI_OFFSET;
-	note_vel_send = 127;
+	note_vel_send = 0x7F;
 
-	uart1_send(note_on_send);
-	uart1_send(note_to_send);
-	uart1_send(note_vel_send);
+	note_cmd[0] = note_on_send;
+	note_cmd[1] = note_to_send;
+	note_cmd[2] = note_vel_send;
+
+	midi_send(note_cmd);
 
 	// note off channel 1, note number, velocity = 0xFF
 
@@ -255,37 +264,40 @@ void play(note_t note) {
 	note_to_send = note.number + MIDI_OFFSET;
 	note_vel_send = 0x00;
 
-	uart1_send(note_off_send);
-	uart1_send(note_to_send);
-	uart1_send(note_vel_send);
+	note_cmd[0] = note_on_send;
+	note_cmd[1] = note_to_send;
+	note_cmd[2] = note_vel_send;
+
+	midi_send(note_cmd);
 }
 
 
 // turn note on given note number
 void note_on(int val) {
-	// note on channel 1, note number, velocity = 0xFF
+    // note on channel 1, note number, velocity = 0xFF
+    note_on_send = NOTE_ON | CHANNEL;
+    note_to_send = val + MIDI_OFFSET;
+    note_vel_send = 0x7f;
 
-	note_on_send = NOTE_ON + CHANNEL;
-	note_to_send = val + MIDI_OFFSET;
-	note_vel_send = 0x0F;
+	note_cmd[0] = note_on_send;
+	note_cmd[1] = note_to_send;
+	note_cmd[2] = note_vel_send;
 
-	uart1_send(note_on_send);
-	uart1_send(note_to_send);
-	uart1_send(note_vel_send);
+	midi_send(note_cmd);
 }
-
 
 // turn note off given note number
 void note_off(int val) {
-	// note off channel 1, note number, velocity = 0xFF
+    // note off channel 1, note number, velocity = 0xFF
+    note_off_send = NOTE_OFF | CHANNEL;
+    note_to_send = val + MIDI_OFFSET;
+    note_vel_send = 0x00;
 
-	note_off_send = NOTE_OFF + CHANNEL;
-	note_to_send = val + MIDI_OFFSET;
-	note_vel_send = 0x00;
+	note_cmd[0] = note_on_send;
+	note_cmd[1] = note_to_send;
+	note_cmd[2] = note_vel_send;
 
-	uart1_send(note_off_send);
-	uart1_send(note_to_send);
-	uart1_send(note_vel_send);
+	midi_send(note_cmd);
 }
 
 
@@ -299,8 +311,7 @@ void step(void) {
 		// check if playing any notes this step
 		if (note_queue[i].step == cur_step) {
 			play(note_queue[i]);
-			mvaddch(note_queue[i].number + keyboard_offset + 1,
-					note_queue[i].step + COL_OFFSET, '#'); // add to screen
+			mvaddch(note_queue[i].number + keyboard_offset + 1,	note_queue[i].step + COL_OFFSET, '#'); // add to screen
 		}
 	}
 
@@ -308,22 +319,13 @@ void step(void) {
 		cur_step = 0;
 	else
 		cur_step++;
+
 	// draw scroll bar
-	for (int j = 0; j < 26; j++) {// 27 is test value for the total bar height, maybe change
+	for (int j = 0; j < 27; j++) {// 27 is test value for the total bar height, maybe change
 		mvaddch(keyboard_offset + j, cur_step + COL_OFFSET, '|');
 	}
-	for (int i = 0; i < 26; i+=2) {
-		mvprintw(3 + i, COL_OFFSET + 16, "|");
-	}
-	for (int i = 0; i < 26; i+=2) {
-		mvprintw(3 + i, COL_OFFSET + 32, "|");
-	}
-	for (int i = 0; i < 26; i+=2) {
-		mvprintw(3 + i, COL_OFFSET + 48, "|");
-	}
-	for (int i = 0; i < 26; i++) {
-		mvprintw(3 + i, COL_OFFSET + NUM_STEPS, "+");
-	}
+
+	draw_grid(keyboard_offset);
 }
 
 
@@ -334,7 +336,8 @@ void add_note(int note_num) {
 	n.offset = stm_now() - cur_step_time;
 	n.duration = NOTE_DURATION; // default duration, this gets changed if we read that the note is longer
 	n.number = note_num;
-	mvaddch(n.number + keyboard_offset + 1, n.step + COL_OFFSET, '#'); // add to screen
+
+	mvaddch(n.number + keyboard_offset , n.step + COL_OFFSET, '#'); // add to screen
 	if (num_notes == MAX_NOTES) // if we are at max replace the oldest note
 	{
 		remove_note(0);
@@ -351,11 +354,13 @@ void remove_note(int index) {
 	note_off(note_queue[index].number); // stop note in case its still playing TODO:add check if note is playing so that we arent sending errant note off messages
 	mvaddch(note_queue[index].number + keyboard_offset + 1,
 			note_queue[index].step + COL_OFFSET, ' '); // delete from screen
+
 	while (index < num_notes) // backfill the space left by note removed from array
 	{
 		note_queue[index] = note_queue[index + 1];
 		index++;
 	}
+
 	num_notes--; // decrement number of total notes
 	refresh(); // refresh display to show the removed note
 }
@@ -395,22 +400,28 @@ void draw(int offset) {
 	mvprintw(offset + 24, 0, "_o_______|");
 	mvprintw(offset + 25, 0, "_p_______|");
 
-	for (int i = 0; i < 26; i+=2) {
-		mvprintw(offset + i, COL_OFFSET + 16, "|");
-	}
-	for (int i = 0; i < 26; i+=2) {
-		mvprintw(offset + i, COL_OFFSET + 32, "|");
-	}
-	for (int i = 0; i < 26; i+=2) {
-		mvprintw(offset + i, COL_OFFSET + 48, "|");
-	}
-	for (int i = 0; i < 26; i++) {
-		mvprintw(offset + i, COL_OFFSET + NUM_STEPS, "+");
-	}
-
 	refresh();
 }
 
+void draw_grid(int offset) {
+
+	for (int i = 0; i < 28; i+=2) {
+		mvprintw(offset + i, COL_OFFSET + 0, "|");
+	}
+	for (int i = 0; i < 28; i+=2) {
+		mvprintw(offset + i, COL_OFFSET + 16, "|");
+	}
+	for (int i = 0; i < 28; i+=2) {
+		mvprintw(offset + i, COL_OFFSET + 32, "|");
+	}
+	for (int i = 0; i < 28; i+=2) {
+		mvprintw(offset + i, COL_OFFSET + 48, "|");
+	}
+	for (int i = 0; i < 28; i+=2) {
+		mvprintw(offset + i, COL_OFFSET + 64, "|");
+	}
+	refresh();
+}
 
 // get corresponding note number for keyboard input
 int get_note(int in) {
@@ -472,11 +483,23 @@ int get_note(int in) {
 
 
 // UART1 initialization and configuration
-void uart1_init(void) {
+void port_init(void) {
 	UART1_INIT();
 }
 
 // Send a byte via UART1
-void uart1_send(uint8_t data) {
-	UART1_SEND(data);
+void midi_send(uint8_t data[3]) {
+	uint8_t i = 0;
+
+    mvprintw(0, 40, "SEND CMD:  0x%02x 0x%02x 0x%02x", data[0], data[1], data[2]);
+
+	for (i = 0; i < 3; i++) {
+		UART1_SEND(data[i]);
+	}
+}
+
+// Read a byte via UART1
+int midi_recv() {
+	UART1_READ();
+	return 0;
 }
