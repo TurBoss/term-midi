@@ -4,3 +4,5 @@ midi_sequencer
 bin/midiseq.bin
 bin/midiseq.map
 obj/
+.pydevproject
+send.py

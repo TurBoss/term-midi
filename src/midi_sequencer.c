@@ -64,30 +64,30 @@ void uart1_send(uint8_t data);
 /* ENUMS */
 enum notes {
 	C = 0x00,
-	C_ = 0x01,
-	D = 0x02,
-	D_ = 0x03,
-	E = 0x04,
-	F = 0x05,
-	F_ = 0x06,
-	G = 0x07,
-	G_ = 0x08,
-	A = 0x09,
-	A_ = 0x0A,
-	B = 0x0B,
-	C1 = 0x0C,
-	C_1 = 0x0D,
-	D1 = 0x0E,
-	D_1 = 0x0F,
-	E1 = 0x10,
-	F1 = 0x11,
-	F_1 = 0x12,
-	G1 = 0x13,
-	G_1 = 0x14,
-	A1 = 0x15,
-	A_1 = 0x16,
-	B1 = 0x17,
-	C2 = 0x18,
+	C_,
+	D,
+	D_,
+	E,
+	F,
+	F_,
+	G,
+	G_,
+	A,
+	A_,
+	B,
+	C1,
+	C_1,
+	D1,
+	D_1,
+	E1,
+	F1,
+	F_1,
+	G1,
+	G_1,
+	A1,
+	A_1,
+	B1,
+	C2,
 };
 
 /* MACROS */
@@ -269,9 +269,9 @@ void note_on(int val) {
 	note_to_send = val + MIDI_OFFSET;
 	note_vel_send = 0x0F;
 
-	uart1_send(0x90);
-	uart1_send(0xC3);
-	uart1_send(0xF0);
+	uart1_send(note_on_send);
+	uart1_send(note_to_send);
+	uart1_send(note_vel_send);
 }
 
 
@@ -283,9 +283,9 @@ void note_off(int val) {
 	note_to_send = val + MIDI_OFFSET;
 	note_vel_send = 0x00;
 
-	uart1_send(0x00);
-	uart1_send(0xC3);
-	uart1_send(0x00);
+	uart1_send(note_off_send);
+	uart1_send(note_to_send);
+	uart1_send(note_vel_send);
 }
 
 
