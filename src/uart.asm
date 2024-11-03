@@ -39,8 +39,13 @@
 
 	; baudrate divisors 31250 UART 1 MIDI
 	; 18432000 / (16*31250) = 36,864
-	BRD_LOW_1	EQU	24h
-	BRD_HIGH_1	EQU	16h
+	BRD_LOW_1		EQU	025h
+	BRD_HIGH_1		EQU	000h
+
+	; baudrate divisors 115200 UART 1
+	; 18432000 / (16*115200) = 10,85069444444444
+	;BRD_LOW_1                EQU    00Ah
+	;BRD_HIGH_1               EQU    000h
 
 _UART1_INIT:
 	; all pins to GPIO mode 2, high impedance input
@@ -87,6 +92,7 @@ _UART1_INIT:
 	OUT0	(UART1_LCTL),	A
 	RET
 
+
 _UART1_SEND:
     PUSH	AF
 uart1_available:
@@ -107,3 +113,35 @@ _UART1_READ:
 	; Read the character from the receive buffer
 	IN0 A, (UART1_RBR)
 	RET
+
+
+;       Subroutine      Convert 8-bit hexidecimal number to ASCII reprentation
+;       Inputs          A - number to be printed - 0ABh
+;       Outputs         DE - two byte ASCII values - D=65 / 'A' and E=66 / 'B'
+
+__NUMTOHEX:
+
+        ld c, a   ; a = number to convert
+        call _NTH1
+        ld d, a
+        ld a, c
+        call _NTH2
+        ld e, a
+        ret  ; return with hex number in de
+
+_NTH1:
+
+        rra
+        rra
+        rra
+        rra
+
+_NTH2:
+
+        or 0F0h
+        daa
+        add a, 0A0h
+        adc a, 040h ; Ascii hex at this point (0 to F)
+        ret
+
+
