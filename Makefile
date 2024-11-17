@@ -2,7 +2,7 @@
 # ----------------------------
 
 NAME = midiseq
-DESCRIPTION = "Ag C Agon Midi Sequencer"
+DESCRIPTION = "Agon Midi Sequencer"
 COMPRESSED = NO
 
 CFLAGS = -Wall -Wextra -Oz -Wint-conversion

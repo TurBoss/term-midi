@@ -16,7 +16,8 @@
 #include "sokol_time.h"
 
 void UART1_INIT(void);
-void UART1_SEND(uint8_t data);
+void UART1_SEND(uint8_t);
+void UART1_WRITE(uint8_t*);
 int UART1_READ(void);
 
 /*
@@ -264,7 +265,7 @@ void play(note_t note) {
 	note_to_send = note.number + MIDI_OFFSET;
 	note_vel_send = 0x00;
 
-	note_cmd[0] = note_on_send;
+	note_cmd[0] = note_off_send;
 	note_cmd[1] = note_to_send;
 	note_cmd[2] = note_vel_send;
 
@@ -489,13 +490,9 @@ void port_init(void) {
 
 // Send a byte via UART1
 void midi_send(uint8_t data[3]) {
-	uint8_t i = 0;
 
     mvprintw(0, 40, "SEND CMD:  0x%02x 0x%02x 0x%02x", data[0], data[1], data[2]);
-
-	for (i = 0; i < 3; i++) {
-		UART1_SEND(data[i]);
-	}
+    UART1_WRITE(data);
 }
 
 // Read a byte via UART1

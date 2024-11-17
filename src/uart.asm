@@ -6,10 +6,11 @@
 
 	ASSUME		ADL = 1
 
-	SECTION .text
+	SECTION		.text
 
 	PUBLIC		_UART1_INIT
 	PUBLIC		_UART1_SEND
+	PUBLIC		_UART1_WRITE
 	PUBLIC		_UART1_READ
 
 	; UART1
@@ -78,7 +79,7 @@ _UART1_INIT:
     OR      10000000b                   ; set UART_LCTL_DLAB
     OUT0    (UART1_LCTL),   A
     LD      A,              BRD_LOW_1    ; Load divisor low
-    OUT     (UART1_BRG_L),  A
+    OUT0     (UART1_BRG_L),  A
     LD      A,              BRD_HIGH_1   ; Load divisor high
     OUT0    (UART1_BRG_H),  A
     IN0     A,              (UART1_LCTL)
@@ -104,9 +105,16 @@ uart1_available:
     AND     01000000b                   ; 040h = Transmit holding register/FIFO and transmit shift register are empty
     JR      Z,              uart1_available
     POP     AF
-    OUT0    (UART1_THR),    D
+    OUT0    (UART1_THR),    A
     RET
 
+_UART1_WRITE:
+    LD		A,	(HL)
+    OR		A
+    RET		Z
+    CALL	_UART1_SEND
+    INC		HL
+    JR		_UART1_WRITE
 
 _UART1_READ:
     ; Check if the receive buffer is full
